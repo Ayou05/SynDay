@@ -1,0 +1,26 @@
+[Unit]
+Description=SynDay Go API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=synday
+Group=synday
+WorkingDirectory=/opt/synday
+EnvironmentFile=/opt/synday/.env
+ExecStart=/opt/synday/synday-api
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/synday
+AmbientCapabilities=
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
+

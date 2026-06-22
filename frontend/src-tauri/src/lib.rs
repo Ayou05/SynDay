@@ -1,0 +1,26 @@
+#[cfg(target_os = "ios")]
+mod ios_push;
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+  tauri::Builder::default()
+    .plugin(tauri_plugin_opener::init())
+    .plugin(tauri_plugin_store::Builder::default().build())
+    .plugin(tauri_plugin_notification::init())
+    .plugin(tauri_plugin_deep_link::init())
+    .setup(|app| {
+      #[cfg(target_os = "ios")]
+      ios_push::install(app.handle());
+
+      if cfg!(debug_assertions) {
+        app.handle().plugin(
+          tauri_plugin_log::Builder::default()
+            .level(log::LevelFilter::Info)
+            .build(),
+        )?;
+      }
+      Ok(())
+    })
+    .run(tauri::generate_context!())
+    .expect("error while running tauri application");
+}
