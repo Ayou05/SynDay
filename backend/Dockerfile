@@ -1,4 +1,4 @@
-FROM golang:1.26-alpine AS build
+FROM golang:1.25-alpine AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -10,6 +10,7 @@ FROM gcr.io/distroless/static-debian12:nonroot
 
 WORKDIR /app
 COPY --from=build /out/synday-api /app/synday-api
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 EXPOSE 8080
 USER nonroot:nonroot
 ENTRYPOINT ["/app/synday-api"]
