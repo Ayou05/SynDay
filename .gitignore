@@ -18,3 +18,5 @@ backend/.cache/
 frontend/.tauri/
 frontend/src-tauri/gen/apple/assets/*.wav
 .build/
+synday-release.keystore
+synday-release.properties

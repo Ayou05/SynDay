@@ -23,6 +23,10 @@ type Config struct {
 	GoEasyAppKey        string
 	GoEasyRestKey       string
 	GoEasyRestURL       string
+	QiniuAccessKey      string
+	QiniuSecretKey      string
+	QiniuBucket         string
+	QiniuDomain         string
 	APNsKeyID           string
 	APNsTeamID          string
 	APNsBundleID        string
@@ -58,6 +62,10 @@ func Load() (Config, error) {
 		GoEasyAppKey:        strings.TrimSpace(os.Getenv("GOEASY_APP_KEY")),
 		GoEasyRestKey:       strings.TrimSpace(os.Getenv("GOEASY_REST_KEY")),
 		GoEasyRestURL:       env("GOEASY_REST_URL", "https://rest-hangzhou.goeasy.io/v2/pubsub/publish"),
+		QiniuAccessKey:      strings.TrimSpace(os.Getenv("QINIU_ACCESS_KEY")),
+		QiniuSecretKey:      strings.TrimSpace(os.Getenv("QINIU_SECRET_KEY")),
+		QiniuBucket:         env("QINIU_BUCKET", "synday"),
+		QiniuDomain:         strings.TrimRight(strings.TrimSpace(os.Getenv("QINIU_DOMAIN")), "/"),
 		APNsKeyID:           strings.TrimSpace(os.Getenv("APNS_KEY_ID")),
 		APNsTeamID:          strings.TrimSpace(os.Getenv("APNS_TEAM_ID")),
 		APNsBundleID:        env("APNS_BUNDLE_ID", "cloud.catclaw.synday"),

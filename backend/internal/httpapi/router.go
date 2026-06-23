@@ -82,6 +82,7 @@ func New(
 			protected.Put("/devices/current", api.registerDevice)
 			protected.Delete("/devices/current", api.unregisterDevice)
 			protected.Get("/realtime/session", api.realtimeSession)
+			protected.Get("/upload/token", api.uploadToken)
 			protected.Get("/notifications", api.unreadNotifications)
 			protected.Put("/notifications/{notificationID}/read", api.readNotification)
 			protected.Delete("/account", api.requestAccountDeletion)
@@ -149,8 +150,9 @@ func (a *API) ready(w http.ResponseWriter, r *http.Request) {
 			"apns": a.cfg.APNsKeyID != "" &&
 				a.cfg.APNsTeamID != "" &&
 				a.cfg.APNsPrivateKey != "",
-			"fcm":  a.cfg.FCMProjectID != "" && a.cfg.FCMCredentialsJSON != "",
-			"oppo": a.cfg.OPPOAppKey != "" && a.cfg.OPPOMasterSecret != "",
+			"fcm":   a.cfg.FCMProjectID != "" && a.cfg.FCMCredentialsJSON != "",
+			"oppo":  a.cfg.OPPOAppKey != "" && a.cfg.OPPOMasterSecret != "",
+			"qiniu": a.cfg.QiniuAccessKey != "" && a.cfg.QiniuSecretKey != "" && a.cfg.QiniuDomain != "",
 		},
 	})
 }
