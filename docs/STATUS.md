@@ -69,11 +69,19 @@
 - 修复设备 token 双唯一约束下的登记冲突，兼容设备 ID 重建与推送 token 轮换。
 - 退出登录新增设备推送注销与本地定时提醒清理，降低共享设备上的隐私残留。
 
+- 2026-06-23 接手审计：备份代码，完成白皮书 vs 代码差异分析（docs/GAP_ANALYSIS.md）。
+- 2026-06-23 提交 80 个未提交文件到 Git（commit 5906009）。
+- 2026-06-23 前端生产配置 frontend/.env.production 创建完成，Vite 生产构建通过。
+- 2026-06-23 Go 后端测试全通过，Linux amd64 交叉编译二进制成功（/tmp/synday-api-linux-amd64, 17MB）。
+- 2026-06-23 确认外部资源全部就绪：Supabase 可达、GoEasy 可达、DeepSeek 可达、API 域名已解析、API /healthz 返回 OK。
+- 2026-06-23 确认服务器 API 版本偏旧（/readyz 返回 404），需要重新部署。
+
 ## 进行中
 
+- 需要服务器 SSH 访问权限以部署最新 API 二进制（当前服务器运行旧版，无 /readyz 端点）。
+- 需要在 Supabase SQL Editor 手动执行迁移 006（本地 DNS 无法解析 Supabase DB 直连地址）。
 - 验证 Android debug APK 构建。
 - 验证 iOS Xcode 无签名/真机编译链路。
-- 在 Supabase 执行第 6 个实时频道迁移并核验生产 API。
 - 完成全页面视觉检查和细节迭代。
 - 补齐 Android FCM/OPPO 设备令牌获取和 OPPO PUSH 适配器（需真实平台项目与应用凭据）。
 
@@ -95,4 +103,4 @@
 - 工具链环境变量通过 `scripts/dev-env.sh` 加载，尚未写入用户全局 shell。
 - Supabase、DeepSeek、GoEasy 的本地生产参数已存在于 Git 忽略文件；当前沙箱 DNS 无法访问公网，因此仍未完成真实服务往返验证。
 - OPPO、FCM 与 APNs 生产凭据/项目配置仍不完整，后台推送与双机验收必须在平台项目准备后继续。
-- 当前执行环境不能写入 `.git/index.lock`，且 GitHub App 写分支被 403 拒绝；CI 与本轮改动尚未提交。
+- GitHub App 写分支被 403 拒绝；但本地 Git 提交已完成（5906009），CI 文件已包含在提交中。
