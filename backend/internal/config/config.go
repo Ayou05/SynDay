@@ -27,6 +27,7 @@ type Config struct {
 	APNsTeamID          string
 	APNsBundleID        string
 	APNsPrivateKey      string
+	APNsEnvironment     string
 	OPPOAppKey          string
 	OPPOMasterSecret    string
 	OPPOPushEndpoint    string
@@ -61,6 +62,7 @@ func Load() (Config, error) {
 		APNsTeamID:          strings.TrimSpace(os.Getenv("APNS_TEAM_ID")),
 		APNsBundleID:        env("APNS_BUNDLE_ID", "cloud.catclaw.synday"),
 		APNsPrivateKey:      strings.TrimSpace(os.Getenv("APNS_PRIVATE_KEY")),
+		APNsEnvironment:     env("APNS_ENVIRONMENT", "development"),
 		OPPOAppKey:          strings.TrimSpace(os.Getenv("OPPO_APP_KEY")),
 		OPPOMasterSecret:    strings.TrimSpace(os.Getenv("OPPO_MASTER_SECRET")),
 		OPPOPushEndpoint:    strings.TrimSpace(os.Getenv("OPPO_PUSH_ENDPOINT")),

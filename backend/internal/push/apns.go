@@ -23,6 +23,7 @@ type APNs struct {
 	keyID      string
 	teamID     string
 	bundleID   string
+	endpoint   string
 	privateKey *ecdsa.PrivateKey
 	client     *http.Client
 	mu         sync.Mutex
@@ -30,11 +31,16 @@ type APNs struct {
 	jwtAt      time.Time
 }
 
-func NewAPNs(keyID, teamID, bundleID, privateKeyPEM string) (*APNs, error) {
+func NewAPNs(keyID, teamID, bundleID, privateKeyPEM, environment string) (*APNs, error) {
+	endpoint, err := apnsEndpoint(environment)
+	if err != nil {
+		return nil, err
+	}
 	provider := &APNs{
 		keyID:    strings.TrimSpace(keyID),
 		teamID:   strings.TrimSpace(teamID),
 		bundleID: strings.TrimSpace(bundleID),
+		endpoint: endpoint,
 		client:   &http.Client{Timeout: 8 * time.Second},
 	}
 	if provider.keyID == "" || provider.teamID == "" || strings.TrimSpace(privateKeyPEM) == "" {
@@ -54,6 +60,17 @@ func NewAPNs(keyID, teamID, bundleID, privateKeyPEM string) (*APNs, error) {
 	}
 	provider.privateKey = ecdsaKey
 	return provider, nil
+}
+
+func apnsEndpoint(environment string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(environment)) {
+	case "", "development", "sandbox":
+		return "https://api.sandbox.push.apple.com", nil
+	case "production":
+		return "https://api.push.apple.com", nil
+	default:
+		return "", fmt.Errorf("unsupported APNs environment %q", environment)
+	}
 }
 
 func (a *APNs) Configured() bool {
@@ -84,7 +101,7 @@ func (a *APNs) Send(ctx context.Context, deviceToken, title, body, sound string,
 	request, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		"https://api.push.apple.com/3/device/"+deviceToken,
+		a.endpoint+"/3/device/"+deviceToken,
 		bytes.NewReader(encoded),
 	)
 	if err != nil {

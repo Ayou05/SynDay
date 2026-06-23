@@ -3,7 +3,9 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -12,7 +14,11 @@ type Postgres struct {
 }
 
 func NewPostgres(ctx context.Context, databaseURL string) (*Postgres, error) {
-	pool, err := pgxpool.New(ctx, databaseURL)
+	poolConfig, err := postgresPoolConfig(databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse postgres configuration: %w", err)
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		return nil, fmt.Errorf("create postgres pool: %w", err)
 	}
@@ -21,6 +27,23 @@ func NewPostgres(ctx context.Context, databaseURL string) (*Postgres, error) {
 		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
 	return &Postgres{Pool: pool}, nil
+}
+
+func postgresPoolConfig(databaseURL string) (*pgxpool.Config, error) {
+	config, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	config.MaxConns = 8
+	config.MinConns = 0
+	config.MaxConnLifetime = 30 * time.Minute
+	config.MaxConnIdleTime = 5 * time.Minute
+	config.HealthCheckPeriod = time.Minute
+	config.ConnConfig.ConnectTimeout = 10 * time.Second
+	if config.ConnConfig.Port == 6543 {
+		config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+	}
+	return config, nil
 }
 
 func (p *Postgres) Close() {

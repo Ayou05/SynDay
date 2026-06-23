@@ -8,6 +8,10 @@
 
 - [24 小时执行计划](docs/PLAN.md)
 - [产品与技术决策](docs/DECISIONS.md)
+- [远期完整产品白皮书](docs/FUTURE_PRODUCT_WHITEPAPER.md)
+- [产品范围与需求追踪](docs/PRODUCT_SCOPE_MATRIX.md)
+- [Agent 交接板](docs/HANDOFF.md)
+- [GitHub Actions 构建](docs/GITHUB_ACTIONS.md)
 - [实时实施状态](docs/STATUS.md)
 - [V1 验收清单](docs/ACCEPTANCE.md)
 - [部署手册](docs/DEPLOYMENT.md)
@@ -27,4 +31,12 @@
 ```bash
 chmod +x scripts/check.sh
 ./scripts/check.sh
+```
+
+生产与原生检查：
+
+```bash
+./scripts/production-check.sh
+./scripts/native-build.sh android
+./scripts/native-build.sh ios
 ```

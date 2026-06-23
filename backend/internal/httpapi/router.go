@@ -48,6 +48,7 @@ func New(
 	router.Use(cors(cfg.AllowedOrigins))
 
 	router.Get("/healthz", api.health)
+	router.Get("/readyz", api.ready)
 	router.Route("/v1", func(r chi.Router) {
 		r.Get("/time", api.serverTime)
 		r.Group(func(protected chi.Router) {
@@ -79,6 +80,8 @@ func New(
 			protected.Post("/settings/leave-days", api.createLeave)
 			protected.Delete("/settings/leave-days/{leaveID}", api.deleteLeave)
 			protected.Put("/devices/current", api.registerDevice)
+			protected.Delete("/devices/current", api.unregisterDevice)
+			protected.Get("/realtime/session", api.realtimeSession)
 			protected.Get("/notifications", api.unreadNotifications)
 			protected.Put("/notifications/{notificationID}/read", api.readNotification)
 			protected.Delete("/account", api.requestAccountDeletion)
@@ -127,6 +130,29 @@ func (a *API) health(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+func (a *API) ready(w http.ResponseWriter, r *http.Request) {
+	if err := a.repo.Health(r.Context()); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"status":   "unavailable",
+			"database": false,
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":   "ready",
+		"database": true,
+		"capabilities": map[string]bool{
+			"ai":       a.cfg.DeepSeekAPIKey != "",
+			"realtime": a.cfg.GoEasyRestKey != "" || a.cfg.GoEasyAppKey != "",
+			"apns": a.cfg.APNsKeyID != "" &&
+				a.cfg.APNsTeamID != "" &&
+				a.cfg.APNsPrivateKey != "",
+			"fcm":  a.cfg.FCMProjectID != "" && a.cfg.FCMCredentialsJSON != "",
+			"oppo": a.cfg.OPPOAppKey != "" && a.cfg.OPPOMasterSecret != "",
+		},
+	})
 }
 
 func (a *API) serverTime(w http.ResponseWriter, _ *http.Request) {

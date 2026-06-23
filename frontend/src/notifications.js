@@ -3,9 +3,11 @@ import {
   Schedule,
   Visibility,
   cancel,
+  cancelAll,
   channels,
   createChannel,
   isPermissionGranted,
+  onAction,
   requestPermission,
   sendNotification,
 } from "@tauri-apps/plugin-notification";
@@ -57,6 +59,22 @@ export function isTauriRuntime() {
   return Boolean(window.__TAURI_INTERNALS__);
 }
 
+function mobilePlatform() {
+  const userAgent = navigator.userAgent || "";
+  if (/Android/i.test(userAgent)) return "android";
+  if (
+    /iPhone|iPad|iPod/i.test(userAgent) ||
+    (/Macintosh/i.test(userAgent) && navigator.maxTouchPoints > 1)
+  ) {
+    return "ios";
+  }
+  return "desktop";
+}
+
+function soundResource(name) {
+  return mobilePlatform() === "ios" ? `${name}.wav` : name;
+}
+
 export async function ensureNotificationPermission(prompt = false) {
   if (!isTauriRuntime()) return false;
   let granted = await isPermissionGranted();
@@ -67,7 +85,7 @@ export async function ensureNotificationPermission(prompt = false) {
 }
 
 export async function configureNotificationChannels() {
-  if (!isTauriRuntime()) return;
+  if (!isTauriRuntime() || mobilePlatform() !== "android") return;
   const existing = new Set((await channels()).map((channel) => channel.id));
   for (const channel of CHANNELS) {
     if (!existing.has(channel.id)) {
@@ -95,7 +113,7 @@ export async function scheduleDailyReminders({
       title: externalCheckinEnabled ? "该完成今天的学习复盘了" : "今天的复盘已经准备好",
       body: externalCheckinEnabled ? "整理后即可复制到外部打卡。" : "用几分钟看看今天发生了什么。",
       channelId: "review",
-      sound: "review_wood",
+      sound: soundResource("review_wood"),
       schedule: Schedule.interval({ hour: 23, minute: 30 }, true),
       extra: { route: "review" },
     });
@@ -108,10 +126,24 @@ export async function scheduleDailyReminders({
       title: "离计划休息还有一小时",
       body: "如果今天还有想完成的事，现在只选最重要的一项。",
       channelId: "bedtime",
-      sound: "bedtime_bell",
+      sound: soundResource("bedtime_bell"),
       schedule: Schedule.interval({ hour: (hour + 23) % 24, minute }, true),
       extra: { route: "today" },
     });
   }
   return true;
+}
+
+export async function listenForNotificationActions(onRoute) {
+  if (!isTauriRuntime()) return () => {};
+  const listener = await onAction((notification) => {
+    const route = notification.extra?.route;
+    if (typeof route === "string") onRoute(route);
+  });
+  return () => listener.unregister();
+}
+
+export async function clearScheduledNotifications() {
+  if (!isTauriRuntime()) return;
+  await cancelAll();
 }

@@ -1,6 +1,6 @@
 # SynDay 实施状态
 
-最后更新：2026-06-22
+最后更新：2026-06-23
 
 ## 当前阶段
 
@@ -39,29 +39,60 @@
 - 修正情侣月报跨月边界为北京时间。
 - 将请假策略和绑定冲突映射为可识别业务错误。
 - 修正个人/相伴连胜的休息日保护语义，并为 DeepSeek Flash 显式关闭思考模式。
-- 2026-06-22 复验：Go 测试、Vite 生产构建、Cargo check、`git diff --check` 全部通过。
+- 纳入新版远期完整白皮书，补齐情侣 IM、备考社区、完整数据看板和长期数据模型。
+- 建立当前投用版与完整终态的范围矩阵，并裁决与既有决定的冲突。
+- 建立 `docs/HANDOFF.md` 跨 Agent 交接板。
+- 收紧 host 网络下的 API 监听地址，统一 Go 1.25 构建链。
+- 修复六位绑定码碰撞与多行认领风险。
+- 新增随机实时频道 capability，避免通过用户 UUID 猜测私人频道。
+- 完成第一轮正式移动端视觉重构：Apple 结构语法、SynDay 暮色绿、浮动磨砂底栏与线性图标。
+- 新增带数据库锁和校验和账本的迁移命令；第 6 迁移受当前沙箱 DNS 限制尚未写入 Supabase。
+- 2026-06-23 最终复验：Go test/vet、Vite 生产构建、Cargo check/clippy、iOS AppIcon/XML、离线 npm 安装计划、Android AAPT2 资源编译与 `git diff --check` 全部通过。
+- 移除运行时第三方 CDN JavaScript，前台实时动态改为 12 秒持久通知补拉，避免供应链与商店审核风险。
+- 增加 Supabase transaction pooler 的 simple protocol 与连接池边界配置，并补充仓储配置测试。
+- 增加 `/readyz` 生产能力探针与公网检查脚本。
+- 双端最低版本统一为 iOS 15 / Android 26；iPhone、iPad 方向配置已在生成源和生成物中统一。
+- macOS Tauri 调试 App 已成功打包，五类通知音效已验证进入 bundle 资源根目录。
+- DeepSeek V4 Flash 复盘请求启用官方 JSON Output，激励与复盘继续显式关闭思考模式以控制等待时间。
+- 修复历史日期空复盘标题、剪贴板失败提示和设置页快速提交竞态。
+- 修复专注每秒刷新与通知轮询整页重绘导致表单输入丢失的问题，并统一月历按北京时间计算星期。
+- 清理 iOS AppIcon alpha 通道并补齐双端品牌启动屏；XML 静态校验通过，ibtool 动态编译仍受当前 CoreSimulator 环境阻塞。
+- 将 Web、Rust、Tauri、iOS 与 Android 产品版本统一为 `1.0.0`。
+- 将前端 `latest` 依赖改为 lockfile 对应的精确版本，离线 `npm ci --dry-run` 通过。
+- 修复产品样式层覆盖暗色模式文字 token 的问题，补齐暗色空状态与导航对比度。
+- 修复 iOS 调用 Android 通知频道接口与自定义声音缺少扩展名的问题，并接入本地通知点击路由。
+- 统一登录后与冷启动的会话初始化，并增加 APNs token 原生缓存/主动补读，避免首次注册事件早于 WebView 监听。
+- 增加未登录绑定深链接暂存与登录后续接，避免扫码唤起后因认证流程丢失 token。
+- 第 6 迁移收紧系统级 `SECURITY DEFINER` 函数执行权限，阻断 Supabase 客户端 RPC 越权面。
+- 修复连胜通知错误复用伴侣动态开关的问题，服务端按通知类型读取独立偏好。
+- 增加 APNs development/production endpoint 配置与测试，当前开发签名默认走 sandbox。
+- 修复设备 token 双唯一约束下的登记冲突，兼容设备 ID 重建与推送 token 轮换。
+- 退出登录新增设备推送注销与本地定时提醒清理，降低共享设备上的隐私残留。
 
 ## 进行中
 
 - 验证 Android debug APK 构建。
 - 验证 iOS Xcode 无签名/真机编译链路。
-- 审计 SQL 迁移、通知、删除流程与原生配置。
+- 在 Supabase 执行第 6 个实时频道迁移并核验生产 API。
+- 完成全页面视觉检查和细节迭代。
 - 补齐 Android FCM/OPPO 设备令牌获取和 OPPO PUSH 适配器（需真实平台项目与应用凭据）。
 
 ## 外部待办
 
 - [ ] 购买腾讯云香港 2C2G Ubuntu 24.04 服务器
 - [x] 创建 Supabase 新加坡项目：`abuhrrrqvpivzdvwkmik`
-- [ ] 注册 GoEasy
+- [x] 注册并配置 GoEasy 本地生产参数；待公网联调
 - [ ] 注册 OPPO 开放平台
-- [ ] 准备 DeepSeek API Key
+- [x] 配置 DeepSeek API Key；待公网延迟与降级联调
 - [ ] 将 `api.synday.catclaw.cloud` 指向服务器
 
 ## 已知问题
 
 - 当前 `xcrun simctl` 无法连接 CoreSimulatorService；先使用 iOS 真机验收，稍后修复模拟器。
 - Android 构建已进入 `aarch64-linux-android` Rust 编译，因沙箱无法解析 `static.crates.io` 而无法下载目标依赖。
-- iOS Tauri CLI 因沙箱无法连接 CoreSimulatorService 停在运行时预检；离线 target 检查还缺少 `async-broadcast 0.7.2`。
+- iOS release/arm64/no-sign 构建入口已统一；Tauri CLI 因沙箱无法连接 CoreSimulatorService 停在 `xcrun simctl list runtimes --json` 预检，尚未进入项目编译。
 - 本地 Vite 监听和 Playwright Chromium 启动受沙箱权限限制，尚未完成自动化视觉截图验收。
 - 工具链环境变量通过 `scripts/dev-env.sh` 加载，尚未写入用户全局 shell。
-- Supabase、GoEasy、OPPO 和服务器凭据尚未创建，因此当前只能完成本地编译和无外部凭据测试。
+- Supabase、DeepSeek、GoEasy 的本地生产参数已存在于 Git 忽略文件；当前沙箱 DNS 无法访问公网，因此仍未完成真实服务往返验证。
+- OPPO、FCM 与 APNs 生产凭据/项目配置仍不完整，后台推送与双机验收必须在平台项目准备后继续。
+- 当前执行环境不能写入 `.git/index.lock`，且 GitHub App 写分支被 403 拒绝；CI 与本轮改动尚未提交。

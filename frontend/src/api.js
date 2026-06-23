@@ -16,19 +16,38 @@ export async function api(path, options = {}) {
     throw new APIError("登录已失效", 401);
   }
 
-  const response = await fetch(`${config.apiBaseUrl}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${session.access_token}`,
-      ...options.headers,
-    },
-  });
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 15_000);
+  let response;
+  try {
+    response = await fetch(`${config.apiBaseUrl}${path}`, {
+      ...options,
+      signal: options.signal || controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+        ...options.headers,
+      },
+    });
+  } catch (error) {
+    throw new APIError(
+      error?.name === "AbortError" ? "网络响应超时，请稍后重试" : "网络波动，请稍后重试",
+      0,
+    );
+  } finally {
+    window.clearTimeout(timeout);
+  }
 
   let body = null;
   if (response.status !== 204) {
     const text = await response.text();
-    body = text ? JSON.parse(text) : null;
+    if (text) {
+      try {
+        body = JSON.parse(text);
+      } catch {
+        body = { error: response.ok ? "服务返回了无法识别的内容" : "服务暂时不可用" };
+      }
+    }
   }
   if (!response.ok) {
     throw new APIError(body?.error || "请求失败", response.status, body);
@@ -131,6 +150,11 @@ export const apiClient = {
       method: "PUT",
       body: JSON.stringify(input),
     }),
+  unregisterDevice: (deviceId) =>
+    api(`/v1/devices/current?device_id=${encodeURIComponent(deviceId)}`, {
+      method: "DELETE",
+    }),
+  realtimeSession: () => api("/v1/realtime/session"),
   unbindCouple: () =>
     api("/v1/couple/binding", {
       method: "DELETE",

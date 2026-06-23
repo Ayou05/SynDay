@@ -1,0 +1,62 @@
+name: iOS no-sign build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - "codex/**"
+    paths:
+      - "frontend/**"
+      - ".github/workflows/ios-nosign.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Rust target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: frontend/src-tauri
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build iOS without signing
+        working-directory: frontend
+        env:
+          VITE_API_BASE_URL: https://api.synday.catclaw.cloud
+          VITE_SUPABASE_URL: https://abuhrrrqvpivzdvwkmik.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          VITE_GOEASY_HOST: hangzhou.goeasy.io
+          VITE_GOEASY_APP_KEY: ${{ secrets.GOEASY_APP_KEY }}
+        run: npx tauri ios build --no-sign --target aarch64 --ci
+
+      - name: Upload unsigned build
+        uses: actions/upload-artifact@v4
+        with:
+          name: synday-ios-arm64-unsigned
+          path: |
+            frontend/src-tauri/target/aarch64-apple-ios/release/**/*.app
+            frontend/src-tauri/gen/apple/build/**/*.app
+          if-no-files-found: error
+          retention-days: 14

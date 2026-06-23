@@ -19,6 +19,16 @@
 3. `backend/migrations/003_policy_constraints.sql`
 4. `backend/migrations/004_idempotent_operations.sql`
 5. `backend/migrations/005_focus_auto_completion.sql`
+6. `backend/migrations/006_realtime_channel_capabilities.sql`
+
+服务器或本地已配置 `DATABASE_URL` 后，也可使用带锁和校验和记录的迁移命令：
+
+```bash
+cd backend
+go run ./cmd/migrate migrations/006_realtime_channel_capabilities.sql
+```
+
+后续新增迁移继续按编号作为参数执行。不要修改已经记录到 `schema_migrations` 的迁移文件。
 
 随后在 Authentication 中：
 
@@ -49,6 +59,10 @@ cd /opt/synday/deploy
 docker compose up -d --build
 curl http://127.0.0.1:8080/healthz
 ```
+
+`network_mode: host` 仅用于访问 Supabase IPv6 直连网络；Compose 会强制 API 只监听 `127.0.0.1:8080`，避免绕过 Nginx 暴露端口。
+API 容器默认限制为 1 CPU、512MB 内存和 128 PIDs，并将 json-file 日志轮转为
+10MB × 3，适配 2C2G 轻量服务器且避免单服务挤占整机资源。
 
 先安装仅 HTTP 的启动配置并签发证书，避免 Nginx 在证书尚不存在时加载失败：
 
@@ -84,9 +98,14 @@ VITE_GOEASY_APP_KEY=...
 
 发布包内只能放 Supabase publishable/anon key，不能放 service role、数据库密码、DeepSeek、APNs 或厂商推送密钥。
 
+当前 Apple Developer 开发签名使用 `aps-environment=development`，服务器应设置
+`APNS_ENVIRONMENT=development`，消息会发送到 APNs sandbox。改用 TestFlight /
+App Store Connect 签名后，必须同时改为 `APNS_ENVIRONMENT=production`。
+
 ## 5. 健康检查
 
 - `GET /healthz`：数据库连通状态。
+- `GET /readyz`：数据库与 AI、实时、推送能力配置状态（仅布尔值，不返回密钥）。
 - `GET /v1/time`：服务端时间、北京时间时区与业务日期。
 - 每日 04:00：结算昨日、刷新复盘、生成今日任务。
 - 每日 23:30：生成复盘草稿并进行 AI 增强。

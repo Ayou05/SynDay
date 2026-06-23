@@ -44,7 +44,13 @@ func main() {
 
 	aiClient := ai.NewClient(cfg.DeepSeekAPIKey, cfg.DeepSeekBaseURL, cfg.DeepSeekModel)
 	aiService := service.NewAIService(aiClient, repo, cfg.DeepSeekModel)
-	apns, err := push.NewAPNs(cfg.APNsKeyID, cfg.APNsTeamID, cfg.APNsBundleID, cfg.APNsPrivateKey)
+	apns, err := push.NewAPNs(
+		cfg.APNsKeyID,
+		cfg.APNsTeamID,
+		cfg.APNsBundleID,
+		cfg.APNsPrivateKey,
+		cfg.APNsEnvironment,
+	)
 	if err != nil {
 		slog.Error("configure APNs", "error", err)
 		os.Exit(1)

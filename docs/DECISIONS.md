@@ -1,11 +1,13 @@
 # SynDay 产品与技术决策记忆
 
-最后更新：2026-06-22（Asia/Shanghai）
+最后更新：2026-06-23（Asia/Shanghai）
 
 ## 产品定位
 
 - 面向个人学习自律与情侣陪伴学习。
 - 首批用户为两人，小范围自用，但工程按正式上架标准建设。
+- 远期完整终态扩展为：单人备考、情侣一对一 IM、MTI/CATTI 备考社区和全周期数据看板。
+- 远期范围记录在 `docs/FUTURE_PRODUCT_WHITEPAPER.md`，当前投用范围仍以 `docs/ACCEPTANCE.md` 为准。
 - iOS 与 Android 双端，不等待应用商店审核。
 - 非必要不使用弹窗，不做高频催促和复杂长文。
 
@@ -25,6 +27,7 @@
 - App 的核心业务请求尽量经过 Go API。
 - Supabase 负责 Auth、PostgreSQL 和 RLS。
 - GoEasy 负责在线情侣实时同步，不承担离线推送。
+- 正式移动包不从 CDN 下载 JavaScript。GoEasy SDK 在成为本地固定依赖前，前台使用 12 秒低频通知补拉；核心数据与后台推送不受影响。
 - AI 默认使用 DeepSeek，低延迟模型优先。
 
 ## 认证与账户
@@ -118,9 +121,19 @@
 
 ## UI
 
-- 暂时采用 `/Users/kyleliao/Projects/awesome-design-md-main/design-md/airtable/DESIGN.md`。
+- 正式核心版采用 `/Users/kyleliao/Projects/awesome-design-md-main/design-md/apple/DESIGN.md` 的结构语法：清晰层级、17px 正文、极少阴影、44px 触控区和克制动效。
+- 不照搬 Apple 品牌蓝；使用 SynDay 自有暮色绿色作为唯一主交互色，保留米白豁免色和少量语义色。
 - 该规范不是永久决定，可能随时调整。
 - 所有颜色、字号、圆角、间距做成设计令牌，方便整体替换。
 - 非必要不用弹窗。
 - AI 激励在任务下方内联出现。
 - 月度情侣简报以易读数据卡片为主，不做复杂图表和 AI 长文。
+
+## 远期 IM 与社区
+
+- 情侣 IM 仅向当前绑定双方开放；解绑后只读。
+- 私人实时频道必须由服务端签发权限，不允许仅凭公开 AppKey 和用户 ID 订阅。
+- 社区采用关注流和低刺激时间排序，不做付费流量、带货、直播或陌生人私信。
+- 社区支持公开、互关好友和私密三档可见性。
+- 社区正式开放前必须具备举报、拉黑、删除和审核审计。
+- 用户账号删除和内容删除权优先于“永久保存”措辞。

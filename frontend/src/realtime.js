@@ -1,65 +1,31 @@
-import { config } from "./config.js";
+const POLL_INTERVAL_MS = 12_000;
 
-let client = null;
-let subscribedChannel = "";
+// GoEasy remains the server-side fan-out provider, but the mobile bundle must
+// not download executable JavaScript from a CDN at runtime. Until the SDK is
+// pinned as a local dependency, foreground consistency uses a low-frequency
+// durable-notification poll. APNs/FCM/OPPO remain responsible for background
+// delivery.
+export async function connectRealtime(_userID, _channel, onEvent) {
+  let stopped = false;
+  let polling = false;
+  const poll = () => {
+    if (stopped || polling || !navigator.onLine) return;
+    polling = true;
+    Promise.resolve(onEvent({ event: "notification_poll", payload: {} }))
+      .catch(() => {
+        // The durable inbox will be retried by the next foreground poll.
+      })
+      .finally(() => {
+        polling = false;
+      });
+  };
+  const timer = window.setInterval(poll, POLL_INTERVAL_MS);
+  window.addEventListener("online", poll);
+  poll();
 
-function loadGoEasySDK() {
-  if (window.GoEasy) return Promise.resolve(window.GoEasy);
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector('script[data-synday-goeasy="true"]');
-    if (existing) {
-      existing.addEventListener("load", () => resolve(window.GoEasy), { once: true });
-      existing.addEventListener("error", reject, { once: true });
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = "https://cdn.goeasy.io/goeasy-2.13.15.min.js";
-    script.async = true;
-    script.dataset.syndayGoeasy = "true";
-    script.addEventListener("load", () => resolve(window.GoEasy), { once: true });
-    script.addEventListener("error", reject, { once: true });
-    document.head.append(script);
-  });
-}
-
-export async function connectRealtime(userID, onEvent) {
-  if (!config.goEasyAppKey || !userID) return () => {};
-  const GoEasy = await loadGoEasySDK();
-  client ||= GoEasy.getInstance({
-    host: config.goEasyHost,
-    appkey: config.goEasyAppKey,
-    modules: ["pubsub"],
-  });
-  await new Promise((resolve, reject) => {
-    client.connect({
-      id: userID,
-      onSuccess: resolve,
-      onFailed: reject,
-      onProgress: () => {},
-    });
-  });
-  const channel = `user:${userID}`;
-  if (subscribedChannel && subscribedChannel !== channel) {
-    client.pubsub.unsubscribe({ channel: subscribedChannel });
-  }
-  subscribedChannel = channel;
-  client.pubsub.subscribe({
-    channel,
-    onMessage: (message) => {
-      try {
-        onEvent(JSON.parse(message.content));
-      } catch {
-        onEvent({ event: "unknown", payload: { content: message.content } });
-      }
-    },
-    onSuccess: () => {},
-    onFailed: () => {},
-  });
   return () => {
-    if (subscribedChannel) {
-      client?.pubsub.unsubscribe({ channel: subscribedChannel });
-      subscribedChannel = "";
-    }
+    stopped = true;
+    window.clearInterval(timer);
+    window.removeEventListener("online", poll);
   };
 }
-

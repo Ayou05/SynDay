@@ -37,6 +37,30 @@ func (a *API) registerDevice(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (a *API) unregisterDevice(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.UserFromContext(r.Context())
+	deviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
+	if deviceID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "device_id 必填"})
+		return
+	}
+	if err := a.repo.DisableUserDevice(r.Context(), user.ID, deviceID); err != nil {
+		writeInternalError(w)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) realtimeSession(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.UserFromContext(r.Context())
+	channel, err := a.repo.RealtimeChannel(r.Context(), user.ID)
+	if err != nil {
+		writeRepositoryError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"channel": channel})
+}
+
 func (a *API) unreadNotifications(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.UserFromContext(r.Context())
 	items, err := a.repo.UnreadNotifications(r.Context(), user.ID, 100)

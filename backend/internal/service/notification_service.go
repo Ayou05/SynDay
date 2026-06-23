@@ -32,7 +32,7 @@ func (s *NotificationService) NotifyPartner(
 	actorID, kind, title, body, dedupeKey, sound string,
 	payload map[string]any,
 ) error {
-	partnerID, err := s.repo.PartnerForNotification(ctx, actorID)
+	partnerID, err := s.repo.PartnerForNotification(ctx, actorID, kind)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil
@@ -45,7 +45,10 @@ func (s *NotificationService) NotifyPartner(
 	}
 	payload["notification_id"] = notification.ID
 	payload["kind"] = kind
-	if err := s.realtime.Publish(ctx, "user:"+partnerID, kind, payload); err != nil {
+	channel, channelErr := s.repo.RealtimeChannel(ctx, partnerID)
+	if channelErr != nil {
+		slog.Warn("load realtime notification channel", "error", channelErr)
+	} else if err := s.realtime.Publish(ctx, channel, kind, payload); err != nil {
 		slog.Warn("publish realtime notification", "error", err)
 	}
 	tokens, err := s.repo.UserDeviceTokens(ctx, partnerID)

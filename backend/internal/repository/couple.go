@@ -41,36 +41,49 @@ func (p *Postgres) CoupleMonthlyReport(
 }
 
 func (p *Postgres) CreatePairingToken(ctx context.Context, userID string, ttl time.Duration) (model.PairingToken, error) {
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return model.PairingToken{}, fmt.Errorf("generate pairing token: %w", err)
-	}
-	token := base64.RawURLEncoding.EncodeToString(raw)
-	hash := sha256.Sum256([]byte(token))
-	codeNumber, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
-	if err != nil {
-		return model.PairingToken{}, fmt.Errorf("generate pairing code: %w", err)
-	}
-	code := fmt.Sprintf("%06d", codeNumber.Int64())
-	expiresAt := time.Now().Add(ttl)
+	for range 10 {
+		raw := make([]byte, 32)
+		if _, err := rand.Read(raw); err != nil {
+			return model.PairingToken{}, fmt.Errorf("generate pairing token: %w", err)
+		}
+		token := base64.RawURLEncoding.EncodeToString(raw)
+		hash := sha256.Sum256([]byte(token))
+		codeNumber, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
+		if err != nil {
+			return model.PairingToken{}, fmt.Errorf("generate pairing code: %w", err)
+		}
+		code := fmt.Sprintf("%06d", codeNumber.Int64())
+		expiresAt := time.Now().Add(ttl)
 
-	var result model.PairingToken
-	err = p.Pool.QueryRow(ctx, `
-		insert into public.pairing_tokens (
-		  creator_id, token_hash, six_digit_code, expires_at
+		var result model.PairingToken
+		err = p.Pool.QueryRow(ctx, `
+			insert into public.pairing_tokens (
+			  creator_id, token_hash, six_digit_code, expires_at
+			)
+			select $1, $2, $3, $4
+			where not exists (
+			  select 1
+			  from public.pairing_tokens
+			  where six_digit_code = $3
+			    and consumed_at is null
+			    and expires_at > now()
+			)
+			returning id::text, six_digit_code, expires_at
+		`, userID, hex.EncodeToString(hash[:]), code, expiresAt).Scan(
+			&result.ID,
+			&result.Code,
+			&result.ExpiresAt,
 		)
-		values ($1, $2, $3, $4)
-		returning id::text, six_digit_code, expires_at
-	`, userID, hex.EncodeToString(hash[:]), code, expiresAt).Scan(
-		&result.ID,
-		&result.Code,
-		&result.ExpiresAt,
-	)
-	if err != nil {
-		return model.PairingToken{}, fmt.Errorf("insert pairing token: %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return model.PairingToken{}, fmt.Errorf("insert pairing token: %w", err)
+		}
+		result.Token = token
+		return result, nil
 	}
-	result.Token = token
-	return result, nil
+	return model.PairingToken{}, fmt.Errorf("generate unique pairing code: %w", ErrInvalidState)
 }
 
 func (p *Postgres) ClaimPairingToken(ctx context.Context, userID string, input model.PairingClaimInput) (model.PairingToken, error) {
@@ -81,19 +94,28 @@ func (p *Postgres) ClaimPairingToken(ctx context.Context, userID string, input m
 	}
 	var result model.PairingToken
 	err := p.Pool.QueryRow(ctx, `
-		update public.pairing_tokens
+		with candidate as (
+		  select id
+		  from public.pairing_tokens
+		  where consumed_at is null
+		    and expires_at > now()
+		    and creator_id <> $1
+		    and claimed_by is null
+		    and (
+		      ($2 <> '' and token_hash = $2)
+		      or ($3 <> '' and six_digit_code = $3)
+		    )
+		  order by created_at desc
+		  limit 1
+		  for update skip locked
+		)
+		update public.pairing_tokens pt
 		set claimed_by = $1
-		where consumed_at is null
-		  and expires_at > now()
-		  and creator_id <> $1
-		  and claimed_by is null
-		  and (
-		    ($2 <> '' and token_hash = $2)
-		    or ($3 <> '' and six_digit_code = $3)
-		  )
-		returning id::text, six_digit_code, expires_at, claimed_by::text,
-		          creator_confirmed_at is not null,
-		          claimant_confirmed_at is not null
+		from candidate
+		where pt.id = candidate.id
+		returning pt.id::text, pt.six_digit_code, pt.expires_at, pt.claimed_by::text,
+		          pt.creator_confirmed_at is not null,
+		          pt.claimant_confirmed_at is not null
 	`, userID, tokenHash, input.Code).Scan(
 		&result.ID,
 		&result.Code,

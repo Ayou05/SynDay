@@ -1,6 +1,6 @@
 # SynDay V1 验收清单
 
-最后更新：2026-06-22
+最后更新：2026-06-23
 
 状态说明：`完成` 表示代码和本地静态验证通过；`待联调` 表示需要真实云资源或双端设备；`待平台` 表示依赖厂商账号或审核。
 
@@ -38,15 +38,17 @@
 | 每日复盘草稿、编辑、精简复制 | 完成 | 23:30 生成、04:00 刷新和客户端编辑已实现 |
 | AI 风格可选 | 完成 | restrained / companion / concise 已实现 |
 | 月历与情侣月报 | 完成 | 日历 API、月报函数和易读数据卡已实现 |
-| DeepSeek 真实延迟与降级 | 待联调 | 需要生产 API Key |
+| DeepSeek 请求契约 | 完成 | V4 Flash、非思考模式与复盘 JSON Output 已实现并测试 |
+| DeepSeek 真实延迟与降级 | 待联调 | 本地已有生产 API Key；需在可访问公网环境验证 4 秒预算和兜底命中 |
 
 ## 通知与系统能力
 
 | 能力 | 状态 | 验收证据 / 下一步 |
 | --- | --- | --- |
 | 本地复盘、睡前提醒 | 完成 | Tauri notification 调度已实现 |
+| 本地通知点击与平台差异 | 完成 | iOS 跳过 Android 频道 API、使用 `.wav` 声音；点击提醒进入对应页面 |
 | 五类辨识音效且服从静音/勿扰 | 完成 | iOS/Android 资源与通知通道已配置；待真机听感验证 |
-| APNs | 完成 | 服务端 JWT 发送器与 iOS token bridge 已实现；待签名真机联调 |
+| APNs | 完成 | JWT 发送器、sandbox/production 分流、iOS token bridge 与早到 token 缓存补读已实现；待签名真机联调 |
 | FCM 备用 | 待联调 | 服务端 OAuth 发送器已实现；Android 端仍需 Firebase 配置与设备 token 接入 |
 | OPPO PUSH 主通道 | 待平台 | 需 OPPO 开放平台账号、应用凭据和大陆版 Ace 5 实测 |
 
@@ -57,10 +59,16 @@
 | Go 测试 | 完成 | `go test ./...` 通过 |
 | Web 生产构建 | 完成 | `npm run build` 通过 |
 | Rust/Tauri 主机检查 | 完成 | `cargo check` 通过 |
+| 原生最低版本与方向配置 | 完成 | iOS 15、Android 26；手机/iPad 竖屏配置源与生成物一致 |
+| AppIcon 与启动体验 | 完成 | iOS 图标无 alpha；双端启动屏使用 SynDay 暮色绿；Android 资源已通过 AAPT2 编译，待真机视觉验收 |
+| 通知音效打包路径 | 完成 | 五类 WAV 已进入 macOS bundle 资源根目录；待双端真机听感验证 |
+| 自动迁移工具 | 完成 | `cmd/migrate` 支持数据库锁、校验和与重复执行跳过 |
 | Android APK/AAB | 待联调 | 沙箱网络无法补齐 Android target crates；在正常网络环境重跑并接入 FCM/OPPO token |
 | iOS 签名安装 | 待联调 | 需 Tauri iOS 完整构建、Apple 签名与 iPhone 真机 |
 | 隐私边界与账号删除 | 完成 | `docs/PRIVACY.md` 与 7 天删除流程已实现 |
+| 数据库特权函数边界 | 完成 | 系统级 `SECURITY DEFINER` 已在第 6 迁移撤销客户端角色执行权 |
 | 公网 HTTPS 部署 | 待联调 | 需服务器、DNS、Supabase 与生产环境变量 |
+| 生产能力探针 | 完成 | `/readyz` 可验证数据库、AI、实时与各推送通道配置状态 |
 
 ## 最终放行条件
 

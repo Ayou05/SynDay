@@ -37,15 +37,20 @@ func (c *Client) Available() bool {
 }
 
 type chatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []chatMessage `json:"messages"`
-	MaxTokens   int           `json:"max_tokens"`
-	Temperature float64       `json:"temperature"`
-	Stream      bool          `json:"stream"`
-	Thinking    thinkingMode  `json:"thinking"`
+	Model          string          `json:"model"`
+	Messages       []chatMessage   `json:"messages"`
+	MaxTokens      int             `json:"max_tokens"`
+	Temperature    float64         `json:"temperature"`
+	Stream         bool            `json:"stream"`
+	Thinking       thinkingMode    `json:"thinking"`
+	ResponseFormat *responseFormat `json:"response_format,omitempty"`
 }
 
 type thinkingMode struct {
+	Type string `json:"type"`
+}
+
+type responseFormat struct {
 	Type string `json:"type"`
 }
 
@@ -61,8 +66,22 @@ type chatResponse struct {
 }
 
 func (c *Client) Complete(ctx context.Context, system, prompt string, maxTokens int) (string, error) {
+	return c.complete(ctx, system, prompt, maxTokens, false)
+}
+
+func (c *Client) complete(
+	ctx context.Context,
+	system string,
+	prompt string,
+	maxTokens int,
+	jsonOutput bool,
+) (string, error) {
 	if !c.Available() {
 		return "", ErrUnavailable
+	}
+	var format *responseFormat
+	if jsonOutput {
+		format = &responseFormat{Type: "json_object"}
 	}
 	body, err := json.Marshal(chatRequest{
 		Model: c.model,
@@ -70,10 +89,11 @@ func (c *Client) Complete(ctx context.Context, system, prompt string, maxTokens 
 			{Role: "system", Content: system},
 			{Role: "user", Content: prompt},
 		},
-		MaxTokens:   maxTokens,
-		Temperature: 0.5,
-		Stream:      false,
-		Thinking:    thinkingMode{Type: "disabled"},
+		MaxTokens:      maxTokens,
+		Temperature:    0.5,
+		Stream:         false,
+		Thinking:       thinkingMode{Type: "disabled"},
+		ResponseFormat: format,
 	})
 	if err != nil {
 		return "", err
@@ -134,12 +154,13 @@ type ReviewResult struct {
 }
 
 func (c *Client) Review(ctx context.Context, structuredJSON []byte) (ReviewResult, error) {
-	content, err := c.Complete(
+	content, err := c.complete(
 		ctx,
 		`你负责生成每日学习复盘。输入数字绝不能改写或臆造。语气中立、不指责、不写长文。
 严格输出 JSON：{"full":"四段式完整复盘","compact":"适合微信打卡的一段精简摘要"}。full 必须依次包含当日总览、分类明细、未完成客观分析、次日优化建议；次日建议只给一条。`,
 		string(structuredJSON),
 		700,
+		true,
 	)
 	if err != nil {
 		return ReviewResult{}, err

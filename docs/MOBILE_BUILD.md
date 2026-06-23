@@ -1,6 +1,6 @@
 # SynDay 双端构建与真机验收
 
-最后更新：2026-06-22
+最后更新：2026-06-23
 
 ## 共同准备
 
@@ -11,6 +11,9 @@ source scripts/dev-env.sh
 ```
 
 创建 `frontend/.env.production`，填入生产 API、Supabase publishable key 和 GoEasy app key。任何 service role、数据库密码、AI 或推送私钥都不得放入客户端环境变量。
+
+建议统一通过 `./scripts/native-build.sh android|ios` 构建。脚本会验证生产 API、
+Supabase URL 和 publishable key，避免在缺少配置时生成实际指向 localhost 的不可用安装包。
 
 ## Android
 
@@ -43,18 +46,24 @@ npx tauri android build --debug --apk
 xcrun simctl list runtimes --json
 ```
 
-无签名构建：
+release 无签名编译验收：
 
 ```bash
 cd frontend
-npx tauri ios build --debug --no-sign --target aarch64
+npx tauri ios build --no-sign --target aarch64 --ci
 ```
 
-签名真机构建：
+Apple Developer 开发签名真机构建：
 
 ```bash
-npx tauri ios build --debug --target aarch64 --export-method debugging
+./scripts/prepare-ios-assets.sh
+npx tauri ios build --target aarch64 --export-method debugging --ci
 ```
+
+不要直接从命令行裸跑 Xcode 的 Rust build phase；它依赖 Tauri CLI 创建的临时地址文件。
+生成工程内部的配置名是小写 `debug` / `release`，但使用上面的 Tauri 命令不需要手动处理。
+若执行过 `tauri icon` 或重新生成 iOS 工程，必须再次运行
+`./scripts/prepare-ios-assets.sh`，因为 Tauri 源图标要求 RGBA，而 Apple 最终 AppIcon 要求 RGB 无 alpha。
 
 Apple 配置：
 
@@ -62,7 +71,9 @@ Apple 配置：
 - Bundle ID：`cloud.catclaw.synday`
 - 开启 Push Notifications capability。
 - APNs Auth Key 的 `.p8` 只写入服务器环境变量。
-- 当前 entitlement 使用 `development`；正式分发构建必须由签名配置生成匹配的 production entitlement。
+- 当前 entitlement 使用 `development`，适合 Apple Developer 开发签名安装到登记真机。
+- 对应服务器必须设置 `APNS_ENVIRONMENT=development`；否则开发 token 发往生产 APNs 会被拒绝。
+- 若后续走 TestFlight/App Store Connect，改用 `--export-method app-store-connect`，并让 Xcode 生成匹配的 production entitlement。
 
 验收设备：
 

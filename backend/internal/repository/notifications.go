@@ -12,12 +12,15 @@ import (
 
 func (p *Postgres) RegisterDevice(ctx context.Context, userID string, input model.DeviceTokenInput) error {
 	_, err := p.Pool.Exec(ctx, `
+		with cleared as (
+		  delete from public.device_tokens
+		  where (provider = $3::public.push_provider and token = $4)
+		     or (user_id = $1 and device_id = $5 and provider = $3::public.push_provider)
+		)
 		insert into public.device_tokens (
 		  user_id, platform, provider, token, device_id
 		)
 		values ($1, $2::public.device_platform, $3::public.push_provider, $4, $5)
-		on conflict (user_id, device_id, provider)
-		do update set token = excluded.token, enabled = true, last_seen_at = now(), updated_at = now()
 	`, userID, input.Platform, input.Provider, input.Token, input.DeviceID)
 	if err != nil {
 		return fmt.Errorf("register device token: %w", err)
@@ -54,6 +57,18 @@ func (p *Postgres) DisableDeviceToken(ctx context.Context, provider, token strin
 	return err
 }
 
+func (p *Postgres) DisableUserDevice(ctx context.Context, userID, deviceID string) error {
+	_, err := p.Pool.Exec(ctx, `
+		update public.device_tokens
+		set enabled = false, updated_at = now()
+		where user_id = $1 and device_id = $2
+	`, userID, deviceID)
+	if err != nil {
+		return fmt.Errorf("disable user device: %w", err)
+	}
+	return nil
+}
+
 func (p *Postgres) CreateNotification(
 	ctx context.Context,
 	userID string,
@@ -86,7 +101,11 @@ func (p *Postgres) CreateNotification(
 	return notification, nil
 }
 
-func (p *Postgres) PartnerForNotification(ctx context.Context, userID string) (string, error) {
+func (p *Postgres) PartnerForNotification(
+	ctx context.Context,
+	userID string,
+	kind string,
+) (string, error) {
 	var partnerID string
 	err := p.Pool.QueryRow(ctx, `
 		select case when cb.user_a = $1 then cb.user_b::text else cb.user_a::text end
@@ -95,8 +114,11 @@ func (p *Postgres) PartnerForNotification(ctx context.Context, userID string) (s
 		  on partner.id = case when cb.user_a = $1 then cb.user_b else cb.user_a end
 		where cb.status = 'active'
 		  and $1 in (cb.user_a, cb.user_b)
-		  and partner.notification_partner_enabled
-	`, userID).Scan(&partnerID)
+		  and case
+		    when $2 = 'streak_milestone' then partner.notification_streak_enabled
+		    else partner.notification_partner_enabled
+		  end
+	`, userID, kind).Scan(&partnerID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", ErrNotFound
 	}
@@ -104,6 +126,22 @@ func (p *Postgres) PartnerForNotification(ctx context.Context, userID string) (s
 		return "", fmt.Errorf("load notification partner: %w", err)
 	}
 	return partnerID, nil
+}
+
+func (p *Postgres) RealtimeChannel(ctx context.Context, userID string) (string, error) {
+	var channel string
+	err := p.Pool.QueryRow(ctx, `
+		select 'user:' || realtime_channel_key::text
+		from public.profiles
+		where id = $1
+	`, userID).Scan(&channel)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("load realtime channel: %w", err)
+	}
+	return channel, nil
 }
 
 func (p *Postgres) UnreadNotifications(ctx context.Context, userID string, limit int) ([]model.Notification, error) {

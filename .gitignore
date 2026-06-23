@@ -16,4 +16,5 @@ target/
 backend/bin/
 backend/.cache/
 frontend/.tauri/
+frontend/src-tauri/gen/apple/assets/*.wav
 .build/

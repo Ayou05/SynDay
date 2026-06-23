@@ -1,12 +1,16 @@
 import "./styles.css";
 import QRCode from "qrcode";
+import { invoke } from "@tauri-apps/api/core";
 import { apiClient } from "./api.js";
 import { currentSession, signIn, signOut, signUp } from "./auth.js";
 import { cacheToday, db, enqueueOperation, readCachedToday } from "./db.js";
 import { startSyncLoop } from "./sync.js";
 import { connectRealtime } from "./realtime.js";
+import { config } from "./config.js";
 import {
+  clearScheduledNotifications,
   ensureNotificationPermission,
+  listenForNotificationActions,
   scheduleDailyReminders,
 } from "./notifications.js";
 
@@ -50,7 +54,105 @@ const state = {
   taskMenuID: "",
   notifications: [],
   disconnectRealtime: null,
+  disconnectNotificationActions: null,
+  pendingBackgroundRender: false,
 };
+
+function seedPreviewState() {
+  state.today = {
+    tasks: [
+      {
+        id: "preview-1",
+        title: "精读 CATTI 二笔真题一篇",
+        category: "course",
+        planned_time: "09:30:00",
+        status: "completed",
+        is_pinned: true,
+        version: 2,
+        encouragement: "难句拆开之后，路就清楚了。",
+      },
+      {
+        id: "preview-2",
+        title: "复习核心词组 40 个",
+        category: "self_study",
+        planned_time: "14:00:00",
+        status: "pending",
+        is_pinned: false,
+        version: 1,
+      },
+      {
+        id: "preview-3",
+        title: "完成汉译英段落练习",
+        category: "temporary",
+        planned_time: null,
+        status: "pending",
+        is_pinned: false,
+        version: 1,
+      },
+    ],
+    summary: {
+      total_tasks: 3,
+      completed_tasks: 1,
+      completion_percent: 33,
+      focus_seconds: 3240,
+      current_streak: 18,
+      pending_milestone: 0,
+    },
+  };
+  state.partner = {
+    display_name: "嘉",
+    completion_percent: 67,
+    current_streak: 23,
+    is_focusing: true,
+    focus_started_at: new Date(Date.now() - 28 * 60 * 1000).toISOString(),
+    focus_room_id: "preview-room",
+    tasks: [
+      { id: "p1", title: "听写新闻材料", status: "completed" },
+      { id: "p2", title: "复盘错题", status: "completed" },
+      { id: "p3", title: "视译练习 20 分钟", status: "pending" },
+    ],
+  };
+  state.review = {
+    id: "preview-review",
+    business_date: businessDateString(),
+    title: "2026年06月23日 每日学习复盘",
+    full_text:
+      "今日完成 1 项任务，累计专注 54 分钟。\n\n课程任务中的真题精读已经完成，重点难句完成了拆分与回看。\n\n尚未完成的两项任务集中在下午，可能与连续学习后的注意力回落有关。\n\n明天先完成一段汉译英，再进入词组复习。",
+  };
+  state.calendar = {
+    month: "2026-06-01",
+    days: Array.from({ length: 22 }, (_, index) => ({
+      business_date: `2026-06-${String(index + 1).padStart(2, "0")}`,
+      qualified: ![4, 11, 17].includes(index + 1),
+      exempt: [7, 14, 21].includes(index + 1),
+    })),
+  };
+  state.settings = {
+    settings: {
+      display_name: "Kyle",
+      ai_tone: "restrained",
+      external_checkin_enabled: true,
+      bedtime: "00:30:00",
+      notification_review_enabled: true,
+      notification_bedtime_enabled: true,
+      notification_partner_enabled: true,
+      notification_streak_enabled: true,
+    },
+    leave_days: [],
+  };
+  state.plans = [
+    {
+      id: "preview-plan",
+      title: "CATTI 真题精读",
+      category: "course",
+      recurrence: "daily",
+      weekdays: [],
+      planned_time: "09:30:00",
+      starts_on: "2026-06-23",
+      is_active: true,
+    },
+  ];
+}
 
 function escapeHTML(value = "") {
   return String(value)
@@ -70,13 +172,28 @@ function formatSeconds(totalSeconds = 0) {
     : `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-function dateHeading() {
+function dateHeading(date = businessDateString()) {
+  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(date)
+    ? new Date(`${date}T12:00:00+08:00`)
+    : new Date(Date.now() - 4 * 60 * 60 * 1000);
   return new Intl.DateTimeFormat("zh-CN", {
     timeZone: "Asia/Shanghai",
+    year: "numeric",
     month: "long",
     day: "numeric",
     weekday: "long",
-  }).format(new Date());
+  }).format(parsed);
+}
+
+function businessDateString(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(now.getTime() - 4 * 60 * 60 * 1000));
+  const value = (type) => parts.find((part) => part.type === type)?.value || "";
+  return `${value("year")}-${value("month")}-${value("day")}`;
 }
 
 function currentMonthStart() {
@@ -84,7 +201,7 @@ function currentMonthStart() {
     timeZone: "Asia/Shanghai",
     year: "numeric",
     month: "2-digit",
-  }).formatToParts(new Date());
+  }).formatToParts(new Date(Date.now() - 4 * 60 * 60 * 1000));
   const year = parts.find((part) => part.type === "year").value;
   const month = parts.find((part) => part.type === "month").value;
   return `${year}-${month}-01`;
@@ -96,6 +213,19 @@ function recalculateSummary() {
   state.today.summary.total_tasks = total;
   state.today.summary.completed_tasks = completed;
   state.today.summary.completion_percent = total ? Math.round((completed / total) * 100) : 0;
+}
+
+function userIsEditing() {
+  return document.activeElement?.matches("input, textarea, select") || false;
+}
+
+function renderBackgroundUpdate() {
+  if (userIsEditing()) {
+    state.pendingBackgroundRender = true;
+    return;
+  }
+  state.pendingBackgroundRender = false;
+  render();
 }
 
 async function loadToday() {
@@ -503,7 +633,7 @@ function reviewView() {
       <label class="review-date-picker">查看日期<input id="review-date-input" type="date" value="${escapeHTML(
         state.reviewDate,
       )}" /></label>
-      <div class="review-date">${dateHeading()}</div>
+      <div class="review-date">${dateHeading(state.reviewDate || businessDateString())}</div>
       <h2>今日复盘将在 23:30 准备好</h2>
       <p>客观数据会持续更新到次日 04:00。你写下的内容始终可以修改。</p>
       <div class="review-metrics">
@@ -519,8 +649,8 @@ function calendarView() {
   if (!state.calendar) return "";
   const month = state.calendar.month;
   const [year, monthNumber] = month.split("-").map(Number);
-  const firstWeekday = new Date(`${month}T12:00:00+08:00`).getDay();
-  const daysInMonth = new Date(year, monthNumber, 0).getDate();
+  const firstWeekday = new Date(`${month}T12:00:00+08:00`).getUTCDay();
+  const daysInMonth = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
   const byDate = new Map(state.calendar.days.map((day) => [day.business_date, day]));
   const cells = [];
   for (let index = 0; index < firstWeekday; index += 1) cells.push("<i></i>");
@@ -557,6 +687,10 @@ function settingsView() {
     </header>
     <form id="settings-form" class="settings-list">
       <button class="secondary-button full-width notification-permission" data-action="enable-notifications" type="button">启用系统通知并安排提醒</button>
+      <div class="section-header notification-controls">
+        <h2>通知</h2>
+        <button class="text-button" data-action="silence-all-notifications" type="button">全部静默</button>
+      </div>
       <label class="setting-field">昵称<input name="displayName" value="${escapeHTML(settings.display_name)}" maxlength="30" /></label>
       <label class="setting-field">AI 激励语气
         <select name="aiTone">
@@ -608,7 +742,7 @@ function settingsView() {
       <h2>休息与请假</h2>
       <form id="leave-form" class="leave-form">
         <select name="kind"><option value="temporary_leave">临时请假</option><option value="weekly_rest">固定休息日</option></select>
-        <input name="businessDate" type="date" value="${new Date().toISOString().slice(0, 10)}" />
+        <input name="businessDate" type="date" value="${businessDateString()}" />
         <select name="weekday"><option value="1">周一</option><option value="2">周二</option><option value="3">周三</option><option value="4">周四</option><option value="5">周五</option><option value="6">周六</option><option value="7">周日</option></select>
         <button class="secondary-button" type="submit">添加</button>
       </form>
@@ -665,7 +799,7 @@ function planComposer() {
         )
         .join("")}</div>
       <div class="form-row">
-        <label>开始日期<input name="startsOn" type="date" value="${plan.starts_on || new Date().toISOString().slice(0, 10)}" required /></label>
+        <label>开始日期<input name="startsOn" type="date" value="${plan.starts_on || businessDateString()}" required /></label>
         <label>计划时间<input name="plannedTime" type="time" value="${plan.planned_time?.slice(0, 5) || ""}" /></label>
       </div>
       <label class="compact-check"><input name="isPinned" type="checkbox" ${plan.is_pinned ? "checked" : ""}/>作为每日置顶任务</label>
@@ -675,22 +809,34 @@ function planComposer() {
 }
 
 function nav() {
+  const icons = {
+    today:
+      '<svg viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5v8a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5z"/><path d="M9 20v-6h6v6"/></svg>',
+    focus:
+      '<svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 3h6"/></svg>',
+    couple:
+      '<svg viewBox="0 0 24 24"><path d="M20.8 8.7c0 5-8.8 10.3-8.8 10.3S3.2 13.7 3.2 8.7A4.7 4.7 0 0 1 12 6.4a4.7 4.7 0 0 1 8.8 2.3Z"/></svg>',
+    review:
+      '<svg viewBox="0 0 24 24"><path d="M6 4h12a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>',
+    settings:
+      '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.5 1a7 7 0 0 0-1.8-1L14.2 3h-4.4l-.4 3a7 7 0 0 0-1.8 1L5.1 6 3 9.4 5.1 11a7 7 0 0 0 0 2L3 14.6 5.1 18l2.5-1a7 7 0 0 0 1.8 1l.4 3h4.4l.4-3a7 7 0 0 0 1.8-1l2.5 1 2-3.4-2-1.6a7 7 0 0 0 .1-1Z"/></svg>',
+  };
   const items = [
-    ["today", "⌂", "今日"],
-    ["focus", "◷", "专注"],
-    ["couple", "♡", "同序"],
-    ["review", "▦", "复盘"],
-    ["settings", "⚙", "设置"],
+    ["today", "今日"],
+    ["focus", "专注"],
+    ["couple", "同序"],
+    ["review", "复盘"],
+    ["settings", "设置"],
   ];
   return `
     <nav class="bottom-nav" aria-label="主导航">
       ${items
         .map(
-          ([route, icon, label]) => `
+          ([route, label]) => `
             <button class="nav-item" data-route="${route}" type="button" ${
               state.route === route ? 'aria-current="page"' : ""
             }>
-              <span class="nav-icon" aria-hidden="true">${icon}</span>
+              <span class="nav-icon" aria-hidden="true">${icons[route]}</span>
               <span>${label}</span>
             </button>
           `,
@@ -701,6 +847,7 @@ function nav() {
 }
 
 function render() {
+  state.pendingBackgroundRender = false;
   if (state.loading) {
     app.innerHTML = `<main class="loading-screen"><span class="loading-mark">朝夕</span></main>`;
     return;
@@ -789,7 +936,7 @@ async function handleAuth(event) {
     if (!state.session) {
       state.message = "请前往邮箱完成验证，然后回来登录。";
     } else {
-      await loadToday();
+      await initializeAuthenticatedSession();
     }
   } catch (error) {
     state.message = error.message;
@@ -893,6 +1040,18 @@ async function handleAction(element) {
   if (action === "signout") {
     state.disconnectRealtime?.();
     state.disconnectRealtime = null;
+    if (navigator.onLine) {
+      try {
+        await apiClient.unregisterDevice(deviceID());
+      } catch {
+        // Signing out must not be blocked by a temporary network failure.
+      }
+    }
+    try {
+      await clearScheduledNotifications();
+    } catch {
+      // The OS will discard expired reminders even if cleanup is unavailable.
+    }
     await signOut();
     state.session = null;
     state.route = "today";
@@ -921,6 +1080,18 @@ async function handleAction(element) {
     } catch (error) {
       state.message = error.message;
     }
+    render();
+    return;
+  }
+  if (action === "silence-all-notifications") {
+    const settings = state.settings?.settings;
+    if (settings) {
+      settings.notification_review_enabled = false;
+      settings.notification_bedtime_enabled = false;
+      settings.notification_partner_enabled = false;
+      settings.notification_streak_enabled = false;
+    }
+    state.message = "通知已在表单中全部关闭，保存设置后生效。";
     render();
     return;
   }
@@ -1046,8 +1217,12 @@ async function handleAction(element) {
     return;
   }
   if (action === "copy-compact-review") {
-    await navigator.clipboard.writeText(state.review?.compact_text || "");
-    state.message = "精简版已复制。";
+    try {
+      await navigator.clipboard.writeText(state.review?.compact_text || "");
+      state.message = "精简版已复制。";
+    } catch {
+      state.message = "暂时无法写入剪贴板，请长按复盘文字复制。";
+    }
     render();
     return;
   }
@@ -1282,6 +1457,7 @@ async function handleSaveSettings(event) {
     notification_streak_enabled: form.has("streakNotification"),
   };
   try {
+    state.settings ||= { settings: {}, leave_days: [] };
     state.settings.settings = await apiClient.updateSettings(payload);
     await scheduleDailyReminders({
       bedtime: payload.notification_bedtime_enabled ? payload.bedtime : null,
@@ -1361,7 +1537,11 @@ async function handleDeleteAccount(event) {
   render();
 }
 
-async function loadPartner() {
+async function loadPartner(background = false) {
+  if (config.previewMode) {
+    render();
+    return;
+  }
   try {
     state.partner = await apiClient.partner();
     try {
@@ -1373,10 +1553,15 @@ async function loadPartner() {
     if (error.status !== 404) state.message = error.message;
     state.partner = null;
   }
-  render();
+  if (background) renderBackgroundUpdate();
+  else render();
 }
 
 async function loadReview(date = state.reviewDate) {
+  if (config.previewMode) {
+    render();
+    return;
+  }
   if (!state.calendar) {
     try {
       state.calendar = await apiClient.calendar(currentMonthStart());
@@ -1395,6 +1580,10 @@ async function loadReview(date = state.reviewDate) {
 }
 
 async function loadSettings() {
+  if (config.previewMode) {
+    render();
+    return;
+  }
   try {
     const [settings, plans] = await Promise.all([apiClient.settings(), apiClient.plans()]);
     state.settings = settings;
@@ -1409,11 +1598,17 @@ async function loadNotifications() {
   if (!state.session || !navigator.onLine) return;
   try {
     const result = await apiClient.notifications();
-    state.notifications = result.notifications || [];
+    const notifications = result.notifications || [];
+    const changed =
+      notifications.length !== state.notifications.length ||
+      notifications.some((notification, index) => notification.id !== state.notifications[index]?.id);
+    state.notifications = notifications;
+    if (!changed && !state.pendingBackgroundRender) return;
   } catch {
     // Notification history is optional to the core task flow.
+    return;
   }
-  render();
+  renderBackgroundUpdate();
 }
 
 async function startRealtime() {
@@ -1421,12 +1616,21 @@ async function startRealtime() {
   state.disconnectRealtime?.();
   state.disconnectRealtime = null;
   try {
-    state.disconnectRealtime = await connectRealtime(state.session.user.id, async (event) => {
-      await loadNotifications();
-      if (event.event === "partner_joined_focus" || event.event === "partner_task_completed") {
-        if (state.route === "couple") await loadPartner();
-      }
-    });
+    state.disconnectRealtime = await connectRealtime(
+      state.session.user.id,
+      "",
+      async (event) => {
+        await loadNotifications();
+        if (
+          state.route === "couple" &&
+          (event.event === "notification_poll" ||
+            event.event === "partner_joined_focus" ||
+            event.event === "partner_task_completed")
+        ) {
+          await loadPartner(true);
+        }
+      },
+    );
   } catch {
     // The persisted notification inbox covers offline/realtime failures.
   }
@@ -1446,8 +1650,26 @@ function startFocusTicker() {
       });
       return;
     }
-    if (state.route === "focus" || state.route === "today") render();
+    updateFocusDisplay();
   }, 1000);
+}
+
+function updateFocusDisplay() {
+  if (!state.focus) return;
+  const elapsed = focusElapsed();
+  if (state.route === "focus") {
+    const planned = state.focus.planned_seconds;
+    const displayed = planned ? Math.max(0, planned - elapsed) : elapsed;
+    const time = document.querySelector(".focus-time");
+    const support = document.querySelector(".focus-support");
+    if (time) time.textContent = formatSeconds(displayed);
+    if (support) {
+      support.textContent = elapsed < 60 ? "满一分钟后计入今天" : "这段投入已经计入今天";
+    }
+  } else if (state.route === "today") {
+    const summary = document.querySelector(".focus-card small");
+    if (summary) summary.textContent = `正在专注 · ${formatSeconds(elapsed)}`;
+  }
 }
 
 function stopFocusTicker() {
@@ -1465,39 +1687,86 @@ window.addEventListener("offline", () => {
   state.online = false;
   render();
 });
+document.addEventListener("focusout", () => {
+  requestAnimationFrame(() => {
+    if (state.pendingBackgroundRender && !userIsEditing()) render();
+  });
+});
+
+async function initializeAuthenticatedSession() {
+  await restoreActiveFocus();
+  await loadToday();
+  await registerPendingPushToken();
+  await loadNotifications();
+  await startRealtime();
+  const pendingPairingToken = localStorage.getItem("synday-pending-pairing-token");
+  if (pendingPairingToken) {
+    localStorage.removeItem("synday-pending-pairing-token");
+    state.route = "couple";
+    await claimPairing({ code: "", token: pendingPairingToken });
+  }
+}
+
+async function installNativeListeners() {
+  if (!window.__TAURI_INTERNALS__) return;
+  try {
+    state.disconnectNotificationActions = await listenForNotificationActions((route) => {
+      if (!["today", "focus", "couple", "review", "settings"].includes(route)) return;
+      state.route = route;
+      if (route === "review") loadReview();
+      else if (route === "couple") loadPartner();
+      else if (route === "settings") loadSettings();
+      else render();
+    });
+  } catch {
+    // Opening the app still exposes the durable notification inbox.
+  }
+  try {
+    const { listen } = await import("@tauri-apps/api/event");
+    await listen("synday://push-token", async ({ payload }) => {
+      localStorage.setItem("synday-apns-token", String(payload));
+      await registerPendingPushToken();
+    });
+    const pendingToken = await invoke("pending_push_token");
+    if (pendingToken) {
+      localStorage.setItem("synday-apns-token", String(pendingToken));
+      await registerPendingPushToken();
+    }
+  } catch {
+    // Push token registration retries after the next native token event or launch.
+  }
+  try {
+    const { getCurrent, onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
+    const handleURLs = (urls) => {
+      const token = (urls || []).map(pairingTokenFromURL).find(Boolean);
+      if (!token) return;
+      if (!state.session) {
+        localStorage.setItem("synday-pending-pairing-token", token);
+        return;
+      }
+      state.route = "couple";
+      claimPairing({ code: "", token });
+    };
+    handleURLs(await getCurrent());
+    await onOpenUrl(handleURLs);
+  } catch {
+    // Pairing still supports QR scanning and the 6-digit code.
+  }
+}
 
 async function bootstrap() {
   state.session = await currentSession();
   state.loading = false;
+  if (config.previewMode) {
+    seedPreviewState();
+    render();
+    return;
+  }
+  await installNativeListeners();
   startSyncLoop();
   render();
   if (state.session) {
-    await restoreActiveFocus();
-    await loadToday();
-    await registerPendingPushToken();
-    await loadNotifications();
-    await startRealtime();
-  }
-  if (window.__TAURI_INTERNALS__) {
-    try {
-      const { listen } = await import("@tauri-apps/api/event");
-      await listen("synday://push-token", async ({ payload }) => {
-        localStorage.setItem("synday-apns-token", String(payload));
-        await registerPendingPushToken();
-      });
-      const { getCurrent, onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
-      const handleURLs = (urls) => {
-        const token = (urls || []).map(pairingTokenFromURL).find(Boolean);
-        if (token && state.session) {
-          state.route = "couple";
-          claimPairing({ code: "", token });
-        }
-      };
-      handleURLs(await getCurrent());
-      await onOpenUrl(handleURLs);
-    } catch {
-      // Deep links remain available through QR scanning and the 6-digit code.
-    }
+    await initializeAuthenticatedSession();
   }
 }
 

@@ -1,6 +1,6 @@
 [package]
 name = "synday"
-version = "0.1.0"
+version = "1.0.0"
 description = "SynDay 朝夕同序 mobile application"
 authors = ["Catclaw Cloud"]
 license = "Proprietary"
