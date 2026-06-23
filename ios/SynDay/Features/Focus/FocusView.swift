@@ -3,6 +3,7 @@ import SwiftUI
 struct FocusView: View {
     @State private var vm = FocusViewModel()
     @State private var showModeSheet = false
+    @State private var pendingMode: FocusMode = .soloCountup
     @State private var showStopConfirm = false
     @State private var showRating = false
 
@@ -31,8 +32,13 @@ struct FocusView: View {
             .navigationBarTitleDisplayMode(.large)
         }
         .task { await vm.load() }
+        .onReceive(NotificationCenter.default.publisher(for: .joinSharedFocus)) { note in
+            if let roomID = note.object as? String {
+                Swift.Task { await vm.joinPartnerFocus(roomID: roomID) }
+            }
+        }
         .sheet(isPresented: $showModeSheet) {
-            FocusModeSheet { mode, planned, share in
+            FocusModeSheet(defaultMode: pendingMode) { mode, planned, share in
                 showModeSheet = false
                 Swift.Task { await vm.startFocus(mode: mode, plannedSeconds: planned, shareWithPartner: share) }
             }
@@ -55,9 +61,16 @@ struct FocusView: View {
     private var focusStatusCard: some View {
         switch vm.state {
         case .idle:
-            IdleCard(lastFocusMinutes: vm.todayTotalMinutes) {
-                showModeSheet = true
-            }
+            IdleCard(lastFocusMinutes: vm.todayTotalMinutes,
+                     hasPartner: vm.partnerFocus != nil,
+                     onStartSolo: {
+                         pendingMode = .soloCountup
+                         showModeSheet = true
+                     },
+                     onInviteShared: {
+                         pendingMode = .sharedCountup
+                         showModeSheet = true
+                     })
         case .focusing, .stopping:
             if let session = vm.activeSession {
                 FocusingCard(session: session,
@@ -69,7 +82,16 @@ struct FocusView: View {
                 }
             }
         case .completed, .rating:
-            IdleCard(lastFocusMinutes: vm.todayTotalMinutes) { showModeSheet = true }
+            IdleCard(lastFocusMinutes: vm.todayTotalMinutes,
+                     hasPartner: vm.partnerFocus != nil,
+                     onStartSolo: {
+                         pendingMode = .soloCountup
+                         showModeSheet = true
+                     },
+                     onInviteShared: {
+                         pendingMode = .sharedCountup
+                         showModeSheet = true
+                     })
         }
     }
 }
@@ -77,7 +99,9 @@ struct FocusView: View {
 // MARK: - Idle 卡片
 private struct IdleCard: View {
     let lastFocusMinutes: Int
-    let onStart: () -> Void
+    let hasPartner: Bool
+    let onStartSolo: () -> Void      // 正计时/倒计时
+    let onInviteShared: () -> Void   // 邀请 TA 一起专注
     @State private var breath = false
 
     var body: some View {
@@ -123,10 +147,14 @@ private struct IdleCard: View {
 
             VStack(spacing: Spacing.md) {
                 HStack(spacing: Spacing.lg) {
-                    modeButton(icon: "infinity", title: "正计时", isPrimary: false, action: onStart)
-                    modeButton(icon: "hourglass", title: "倒计时", isPrimary: true, action: onStart)
+                    modeButton(icon: "infinity", title: "正计时", isPrimary: false, action: onStartSolo)
+                    modeButton(icon: "hourglass", title: "倒计时", isPrimary: true, action: onStartSolo)
                 }
-                SecondaryButton(title: "邀请 TA 一起专注") { /* TODO: 阶段二 */ }
+                SecondaryButton(title: hasPartner ? "邀请 TA 一起专注" : "绑定后一起专注") {
+                    if hasPartner { onInviteShared() }
+                }
+                .disabled(!hasPartner)
+                .opacity(hasPartner ? 1 : 0.5)
             }
         }
         .padding(Spacing.xxl)
@@ -320,11 +348,20 @@ private struct PartnerFocusCard: View {
 
 // MARK: - 模式选择 Sheet
 private struct FocusModeSheet: View {
-    @State private var mode: FocusMode = .soloCountup
+    let defaultMode: FocusMode
+    @State private var mode: FocusMode
     @State private var duration: Int = 60
     @State private var shareWithPartner = true
     @Environment(\.dismiss) private var dismiss
     let onStart: (FocusMode, Int?, Bool) -> Void
+
+    init(defaultMode: FocusMode = .soloCountup, onStart: @escaping (FocusMode, Int?, Bool) -> Void) {
+        self.defaultMode = defaultMode
+        self.onStart = onStart
+        // 用 _mode 避免在 init 里 @State 警告
+        _mode = State(initialValue: defaultMode)
+        _shareWithPartner = State(initialValue: defaultMode.isShared)
+    }
 
     private let durations = [30, 45, 60, 90]
 

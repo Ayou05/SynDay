@@ -35,6 +35,7 @@ final class FocusViewModel {
     func load() async {
         async let activeTask = fetchActive()
         async let todayTask = fetchToday()
+        async let partnerTask = fetchPartner()
         do {
             let active = try await activeTask
             if let active {
@@ -48,8 +49,43 @@ final class FocusViewModel {
             self.todayTotalSeconds = today.summary.focusSeconds
             // 今日专注次数从任务数近似（后端无专门字段，用 focus_seconds>0 粗略）
             self.todayCount = max(1, today.summary.focusSeconds / 60 / 25) // 占位估算
+            self.partnerFocus = await partnerTask
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+
+    private func fetchPartner() async -> PartnerFocusInfo? {
+        do {
+            let overview: PartnerOverview = try await APIClient.shared.request("/v1/couple/partner")
+            let mode: FocusMode? = overview.focusMode.flatMap { FocusMode(rawValue: $0) }
+            return PartnerFocusInfo(
+                displayName: overview.displayName,
+                isFocusing: overview.isFocusing,
+                startedAt: overview.focusStartedAt,
+                mode: mode,
+                shareWithPartner: overview.focusRoomID != nil
+            )
+        } catch {
+            // 未绑定或网络错误：不显示伴侣区，不影响主流程
+            return nil
+        }
+    }
+
+    // MARK: - 加入伴侣的共享专注（由伴侣页"加入"按钮触发）
+    func joinPartnerFocus(roomID: String) async {
+        let mode: FocusMode = .sharedCountup
+        let input = JoinFocusInput(roomID: roomID, mode: mode.rawValue, operationID: OperationID.generate())
+        do {
+            let session: FocusSession = try await APIClient.shared.request("/v1/focus/join", method: .POST, body: input)
+            self.activeSession = session
+            self.state = .focusing
+            self.error = nil
+            startTimer(from: session.startedAt, planned: session.plannedSeconds)
+            Haptics.focusEnded()
+        } catch {
+            self.error = error.localizedDescription
+            Haptics.error()
         }
     }
 

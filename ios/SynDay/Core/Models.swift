@@ -334,7 +334,7 @@ struct PlanInput: Encodable {
 
 // MARK: - Couple（严格对齐 backend/internal/model/couple.go）
 
-struct PartnerOverview: Codable {
+struct PartnerOverview: Codable, Hashable {
     let userID: String
     let displayName: String
     let completionPercent: Int
@@ -356,6 +356,73 @@ struct PartnerOverview: Codable {
         case focusRoomID = "focus_room_id"
         case tasks
     }
+}
+
+struct PairingToken: Codable, Identifiable, Hashable {
+    let id: String
+    let token: String?
+    let code: String
+    let expiresAt: Date
+    let claimedBy: String?
+    let creatorReady: Bool
+    let claimantReady: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, token, code
+        case expiresAt = "expires_at"
+        case claimedBy = "claimed_by"
+        case creatorReady = "creator_ready"
+        case claimantReady = "claimant_ready"
+    }
+}
+
+struct PairingClaimInput: Encodable {
+    let token: String
+    let code: String
+}
+
+struct PairingConfirmation: Codable, Hashable {
+    let pairingID: String
+    let status: String
+    let bindingID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case pairingID = "pairing_id"
+        case status
+        case bindingID = "binding_id"
+    }
+}
+
+struct JoinFocusInput: Encodable {
+    let roomID: String
+    let mode: String
+    let operationID: String
+
+    enum CodingKeys: String, CodingKey {
+        case roomID = "room_id"
+        case mode
+        case operationID = "operation_id"
+    }
+}
+
+struct CoupleMonthlyReport: Codable {
+    let month: String
+    let metrics: String // 后端是 json.RawMessage，iOS 侧存原始 JSON 字符串
+    let generatedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case month, metrics
+        case generatedAt = "generated_at"
+    }
+}
+
+/// 绑定状态机：未绑定 → 生成令牌等待认领 → 对方已认领待双方确认 → 已绑定
+enum BindingState: Equatable {
+    case unknown
+    case unbound
+    case awaitingClaim(PairingToken)   // 我创建了令牌，等对方输码
+    case awaitingConfirm(PairingToken) // 对方已认领，等我确认
+    case bound(PartnerOverview)
 }
 
 // MARK: - 通用

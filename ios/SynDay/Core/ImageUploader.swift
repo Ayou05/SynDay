@@ -30,14 +30,14 @@ actor ImageUploader {
     }
 
     /// 获取缩略图URL（七牛实时处理，聊天列表用200px）
-    func thumbnailURL(_ url: URL, width: Int = 200, height: Int = 200) -> URL {
+    nonisolated func thumbnailURL(_ url: URL, width: Int = 200, height: Int = 200) -> URL {
         let urlString = url.absoluteString
         let processed = "\(urlString)?imageView2/1/w/\(width)/h/\(height)"
         return URL(string: processed) ?? url
     }
 
     /// 获取预览图URL（聊天详情用800px）
-    func previewURL(_ url: URL, width: Int = 800) -> URL {
+    nonisolated func previewURL(_ url: URL, width: Int = 800) -> URL {
         let urlString = url.absoluteString
         let processed = "\(urlString)?imageView2/2/w/\(width)"
         return URL(string: processed) ?? url
@@ -49,7 +49,9 @@ actor ImageUploader {
         }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        request.setValue("Bearer \(AuthManager.shared.currentUser?.id ?? "")", forHTTPHeaderField: "Authorization")
+        if let token = KeychainStore.accessToken() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             throw UploadError.tokenFailed
