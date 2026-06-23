@@ -17,7 +17,7 @@ export async function api(path, options = {}) {
   }
 
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 15_000);
+  const timeout = window.setTimeout(() => controller.abort(), 30_000);
   let response;
   try {
     response = await fetch(`${config.apiBaseUrl}${path}`, {

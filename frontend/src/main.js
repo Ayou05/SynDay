@@ -56,6 +56,8 @@ const state = {
   disconnectRealtime: null,
   disconnectNotificationActions: null,
   pendingBackgroundRender: false,
+  loadingRoute: false,
+  savingSettings: false,
 };
 
 function seedPreviewState() {
@@ -233,6 +235,8 @@ async function loadToday() {
   recalculateSummary();
   render();
   if (!navigator.onLine || !state.session) return;
+  state.loadingRoute = true;
+  render();
   try {
     const payload = await apiClient.today();
     state.today = payload;
@@ -240,6 +244,7 @@ async function loadToday() {
   } catch (error) {
     state.message = error.message;
   }
+  state.loadingRoute = false;
   recalculateSummary();
   render();
 }
@@ -755,9 +760,11 @@ function settingsView() {
     <section class="danger-zone">
       <h2>账号与关系</h2>
       ${
-        state.dangerMode === "unbind"
-          ? `<div class="inline-danger-confirm"><p>解绑后双方将立即停止共享数据，历史个人记录不会删除。</p><button class="secondary-button" data-action="confirm-unbind" type="button">确认解绑</button><button class="text-button" data-action="close-danger" type="button">取消</button></div>`
-          : `<button class="secondary-button full-width" data-action="open-unbind" type="button">解绑伴侣</button>`
+        state.partner
+          ? state.dangerMode === "unbind"
+            ? `<div class="inline-danger-confirm"><p>解绑后双方将立即停止共享数据，历史个人记录不会删除。</p><button class="secondary-button" data-action="confirm-unbind" type="button">确认解绑</button><button class="text-button" data-action="close-danger" type="button">取消</button></div>`
+            : `<button class="secondary-button full-width" data-action="open-unbind" type="button">解绑伴侣</button>`
+          : ""
       }
       ${
         state.dangerMode === "delete-account"
@@ -876,6 +883,7 @@ function render() {
             </aside>`
           : ""
       }
+      ${state.loadingRoute ? '<div class="route-loading">加载中…</div>' : ''}
       ${views[state.route]()}
     </main>
     ${nav()}
@@ -1245,6 +1253,9 @@ async function handleAction(element) {
     const item = element.closest("[data-task-id]");
     const task = state.today.tasks.find((candidate) => candidate.id === item.dataset.taskId);
     if (!task) return;
+    const previousStatus = task.status;
+    const previousPinned = task.is_pinned;
+    const previousCompletedAt = task.completed_at;
     const apiAction =
       action === "toggle-task"
         ? task.status === "completed"
@@ -1253,8 +1264,14 @@ async function handleAction(element) {
         : task.is_pinned
           ? "unpin"
           : "pin";
-    if (apiAction === "complete") task.status = "completed";
-    if (apiAction === "uncomplete") task.status = "pending";
+    if (apiAction === "complete") {
+      task.status = "completed";
+      task.completed_at = new Date().toISOString();
+    }
+    if (apiAction === "uncomplete") {
+      task.status = "pending";
+      task.completed_at = null;
+    }
     if (apiAction === "pin") task.is_pinned = true;
     if (apiAction === "unpin") task.is_pinned = false;
     state.taskMenuID = "";
@@ -1281,14 +1298,25 @@ async function handleAction(element) {
       const updated = await apiClient.updateTask(task.id, payload);
       Object.assign(task, updated);
       await db.tasks.put(task);
-    } catch {
-      await enqueueOperation({
-        type: "task-update",
-        entity_id: task.id,
-        payload,
-        operation_id: payload.operation_id,
-      });
-      await db.tasks.put(task);
+    } catch (error) {
+      if (error.status && error.status >= 400 && error.status < 500) {
+        // Server returned a real error — rollback optimistic update
+        task.status = previousStatus;
+        task.is_pinned = previousPinned;
+        task.completed_at = previousCompletedAt;
+        recalculateSummary();
+        state.message = error.message;
+        render();
+      } else {
+        // Network error — keep optimistic state and queue for retry
+        await enqueueOperation({
+          type: "task-update",
+          entity_id: task.id,
+          payload,
+          operation_id: payload.operation_id,
+        });
+        await db.tasks.put(task);
+      }
     }
     return;
   }
@@ -1542,6 +1570,10 @@ async function loadPartner(background = false) {
     render();
     return;
   }
+  if (!background) {
+    state.loadingRoute = true;
+    render();
+  }
   try {
     state.partner = await apiClient.partner();
     try {
@@ -1553,6 +1585,7 @@ async function loadPartner(background = false) {
     if (error.status !== 404) state.message = error.message;
     state.partner = null;
   }
+  state.loadingRoute = false;
   if (background) renderBackgroundUpdate();
   else render();
 }
@@ -1562,20 +1595,26 @@ async function loadReview(date = state.reviewDate) {
     render();
     return;
   }
-  if (!state.calendar) {
-    try {
-      state.calendar = await apiClient.calendar(currentMonthStart());
-    } catch (error) {
-      if (error.status !== 404) state.message = error.message;
-    }
-  }
+  state.loadingRoute = true;
+  render();
   try {
-    state.review = await apiClient.review(date || undefined);
-    state.reviewDate = state.review.business_date;
+    const [calendarResult, reviewResult] = await Promise.allSettled([
+      state.calendar ? Promise.resolve(state.calendar) : apiClient.calendar(currentMonthStart()),
+      apiClient.review(date || undefined),
+    ]);
+    if (calendarResult.status === "fulfilled") state.calendar = calendarResult.value;
+    if (reviewResult.status === "fulfilled") {
+      state.review = reviewResult.value;
+      state.reviewDate = state.review.business_date;
+    } else if (reviewResult.reason.status !== 404) {
+      state.message = reviewResult.reason.message;
+      state.review = null;
+    }
   } catch (error) {
-    if (error.status !== 404) state.message = error.message;
+    state.message = error.message;
     state.review = null;
   }
+  state.loadingRoute = false;
   render();
 }
 
@@ -1584,6 +1623,8 @@ async function loadSettings() {
     render();
     return;
   }
+  state.loadingRoute = true;
+  render();
   try {
     const [settings, plans] = await Promise.all([apiClient.settings(), apiClient.plans()]);
     state.settings = settings;
@@ -1591,6 +1632,7 @@ async function loadSettings() {
   } catch (error) {
     state.message = error.message;
   }
+  state.loadingRoute = false;
   render();
 }
 

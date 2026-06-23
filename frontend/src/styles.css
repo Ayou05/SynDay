@@ -82,9 +82,9 @@ select:focus-visible {
   min-height: 100dvh;
   padding:
     calc(var(--safe-top) + var(--space-4))
-    calc(var(--safe-right) + var(--space-4))
+    var(--space-4)
     calc(84px + var(--safe-bottom))
-    calc(var(--safe-left) + var(--space-4));
+    var(--space-4);
   background: var(--color-canvas);
 }
 
@@ -561,9 +561,7 @@ textarea {
   margin-bottom: var(--space-6);
 }
 
-.page-header h1 {
-  max-width: 12ch;
-}
+.page-header h1 {}
 
 .mode-card {
   margin-bottom: var(--space-4);
@@ -1240,6 +1238,8 @@ input[type="checkbox"] {
 
 .bottom-nav {
   position: fixed;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
   z-index: 10;
   right: 0;
   bottom: 0;
@@ -1247,12 +1247,12 @@ input[type="checkbox"] {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   padding:
-    8px calc(var(--safe-right) + 8px)
+    8px 8px
     calc(var(--safe-bottom) + 8px)
-    calc(var(--safe-left) + 8px);
+    8px;
   border-top: 1px solid var(--color-hairline);
   background: rgb(255 255 255 / 94%);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(8px);
 }
 
 .nav-item {
@@ -1427,7 +1427,7 @@ button:active {
 }
 
 h1 {
-  max-width: 12ch;
+  
   font-size: clamp(32px, 9vw, 42px);
   font-weight: 600;
   letter-spacing: -0.035em;
@@ -1862,4 +1862,14 @@ select {
   select:focus-visible {
     outline-color: rgb(143 202 183 / 48%);
   }
+}
+
+.route-loading {
+  padding: 8px 12px;
+  text-align: center;
+  color: var(--color-muted);
+  font-size: 13px;
+  background: var(--color-surface-soft);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-3);
 }
